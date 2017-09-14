@@ -1,0 +1,391 @@
+
+1 初始化
+本地虚拟机 training@localhost 设置节点IP
+
+./CM_config_local_hosts_file.sh 
+
+确认 5台节点 都能登陆
+connect_to_elephant.sh
+
+2.登陆 elephant 配置5台几点hostname 和 hosts
+    2.1 CM_config_hosts.sh
+         配置私有 10.X.X.X 网段IP
+    2.2 on training@localhost检测连通性
+        connect_to_elephant.sh
+        connect_to_tiger.sh
+        connect_to_horse.sh
+        connect_to_monkey.sh
+        connect_to_lion.sh
+    2.3 On elephant Verify that you can communicate with all the hosts in your cluster from elephant by using the hostnames.: 
+        ping elephant
+        ping tiger
+        ping horse
+        ping monkey
+        ping lion
+    2.4 On elephant: Verify that passwordless SSH
+        ssh training@tiger ip addr
+        ssh training@horse ip addr
+        ssh training@monkey ip addr
+        ssh training@lion ip addr
+
+    2.5 On all five hosts  verify hostname
+        uname -n
+    2.6 Verify that the value of the $HOSTNAME
+        echo $HOSTNAME
+        
+3. Start a SOCKS5 proxy server on training@localhost
+    start_SOCKS5_proxy.sh
+    不要关闭窗口
+    打开浏览器验证
+    http://lion:8000/
+        
+        Name	Last modified	Size	Description
+        CDH-5.9.0-1.cdh5.9.0.p0.23-el6.parcel	10-Nov-2016 16:37	1.4G	 
+        CDH-5.9.0-1.cdh5.9.0.p0.23-el6.parcel.sha1	10-Nov-2016 16:26	41	 
+        manifest.json	10-Nov-2016 16:26	62K	 
+
+    http://lion:8050/
+    
+        Name	Last modified	Size	Description
+        RPMS/	05-Dec-2016 10:29	-	 
+        mirrors	10-Nov-2016 16:39	57	 
+        repodata/	05-Dec-2016 10:29	-	 
+    
+4.检测路由 192.168.1.1 
+    route -n
+    
+    0.0.0.0         192.168.1.1     0.0.0.0         UG    0      0        0 eth7
+    
+
+        
+        
+5. On lion 部署CM
+    check Java vesion 
+        java -version
+    check $JAVA_HOME
+        echo $JAVA_HOME
+    check python
+        sudo rpm -qa | grep python-2.6
+    Verify Oracle MySQL Server
+        chkconfig | grep mysqld
+        sudo service mysqld status
+        ##error 
+        rm /var/lib/mysql/mysql.lock
+    Verify the MySQL JDBC Connector
+        ls -l /usr/share/java
+    Configure the External Database ~/training_materials/admin/scripts/mysql-setup.sql
+        mysql -u root < ~/training_materials/admin/scripts/mysql-setup.sql
+        mysql -u root -p 
+        show databases;
+        cmserver ---CM核心库
+        amon   -----监控数据
+        rman   -----报表数据
+        mysql> show databases;
+        +--------------------+
+        | Database           |
+        +--------------------+
+        | information_schema |
+        | amon               |
+        | cmserver           |
+        | hue                |
+        | metastore          |
+        | movielens          |
+        | mysql              |
+        | oozie              |
+        | rman               |
+        | training           |
+        +--------------------+
+    
+    MySQL 安全加固脚本
+        sudo /usr/bin/mysql_secure_installation
+        
+    http服务配置
+        <Directory "/home/training/software">
+            Options +Indexes
+            AllowOverride None
+            Order allow,deny
+            Allow from all
+            </Directory>
+
+        <VirtualHost *:8000>
+            ServerName lion:8000
+            DocumentRoot "/home/training/software/cloudera-cdh5"
+        </VirtualHost>
+
+        <VirtualHost *:8050>
+            ServerName lion:8050
+            DocumentRoot "/home/training/software/cloudera-cm5"
+        </VirtualHost>
+    
+    
+    
+    检查安装介质
+        cd /etc/yum.repos.d 
+        sudo mv  CentOS-Base.repo  CentOS-Debuginfo.repo  CentOS-Media.repo  CentOS-Vault.repo ./bak/
+
+    安装CM
+        sudo yum install -y cloudera-manager-daemons cloudera-manager-server
+    关闭CM启动服务
+        sudo chkconfig cloudera-scm-server off
+        chkconfig --list|grep cloudera-scm-server
+
+    初始化CM数据库
+        sudo /usr/share/cmf/schema/scm_prepare_database.sh mysql cmserver cmserveruser password
+        
+    Start the Cloudera Manager Server.
+        On lion:
+        sudo service cloudera-scm-server start
+    check process
+        top
+        ps wax | grep cloudera-scm-server
+    
+
+6.Creating a Hadoop Cluster 创建Hadoop集群
+    Login: admin/admin
+    
+    Select the “Cloudera Enterprise Data Hub Edition Trial.”
+    Click Continue
+    
+    Type in the names of all five machines: elephant tiger horse monkey lion
+    Click Search
+    
+    Cluster Installation –> Select Repository -> More Options
+    清除默认remote repository URLs
+    add new Remote Parcel Repository URL.
+    http://lion:8000/
+    
+    “Select the specific release of the Cloudera Manager Agent you want to install on your hosts” area choose Custom Repository
+    http://lion:8050/
+    
+    Click Continue
+    
+    unchecked JDK
+    
+    Keep the default setting (Single User Mode not enabled).
+    
+    Cluster Installation – Provide SSH login credentials
+    lion 主机/home/id_rsa/.ssh/id_rsa 秘钥
+    
+    安装过程
+    yum 源报错 检查修改 /etc/yum.repos.d/ 文件
+    
+    
+    next 完成
+    
+    
+    选择您要在群集上安装的 CDH 5 服务
+    自定义 选hdfs 与 yarn include MapReduceV2
+    
+    群集设置-->审核更改 
+    需要修改选项：
+    
+    Host Monitor 存储目录
+        Host Monitor Storage Directory: /var/log/cloudera-host-monitor
+    Service Monitor 存储目录
+        Service Monitor Storage Directory: /var/log/cloudera-service-monitor
+        
+    Examine Running Processes on a Cluster Node
+        $ chkconfig | grep cloudera
+        $ sudo service cloudera-scm-agent status
+        sudo service cloudera-scm-agent restart
+        $ sudo jps
+        
+        $ sudo ps -ef | grep NAMENODE
+    
+    时钟同步，重启NTP服务
+    sudo  ntpstat
+    
+    
+    测试hdfs文件上传
+    cd ~/training_materials/admin/data
+    $ gunzip shakespeare.txt.gz
+    $ hdfs dfs -put shakespeare.txt /tmp
+
+7. Using Flume to Put Data into HDFS
+
+    查看 dfs.replication
+
+    on telepant
+
+    training@elephant:/dfs$ sudo -u hdfs hdfs dfs -mkdir -p /user/training/
+    training@elephant:/dfs$ sudo -u hdfs hdfs dfs -chown training /user/training
+    training@elephant:/dfs$ hdfs dfs -mkdir weblog
+    training@elephant:/dfs$ cd ~/training_materials/admin/data
+    training@elephant:~/training_materials/admin/data$ ls
+    access_log.gz  bigfile.txt.gz  movielens.sql  mysqldump.sql.gz  shakespeare.txt  training.sql
+    training@elephant:~/training_materials/admin/data$ gunzip access_log.gz
+    training@elephant:~/training_materials/admin/data$ hdfs dfs -put access_log weblog
+
+    sudo find /dfs/dn -name '*1073741980*' -ls
+
+ 8. Importing Data with Sqoop
+ 
+    调整权限 grant all on *.* to 'training'@'%' identified by 'training';
+ 
+    sqoop list-databases --connect jdbc:mysql://10.0.15.245 --username training --password training
+    sqoop list-tables --connect jdbc:mysql://10.0.15.245/movielens --username training --password training
+    sqoop import --connect jdbc:mysql://10.0.15.245/movielens --table movie --fields-terminated-by '\t' --username training --password training
+    sqoop import --connect jdbc:mysql://10.0.15.245/movielens --table moviegenre --fields-terminated-by '\t' --username training --password training
+    sqoop import --connect jdbc:mysql://10.0.15.245/movielens --table movierating --fields-terminated-by '\t' --username training --password training
+    $ hdfs dfs -ls movie
+    $ hdfs dfs -tail movie/part-m-00000
+    
+9. Querying HDFS with Hive and Impala
+    add zookeeper  elephant, horse, and tiger
+    
+    add hive 
+        集成 hdfs, yarn, and zookeeper services
+        • Gateway: elephant only
+        • Hive Metastore Server: elephant only
+        • WebHCat Server: Do not select any hosts
+        • HiveServer2: elephant only
+        
+        • Database Hostname: lion
+        • Database Type: MySQL
+        • Database Name: metastore
+        • User Name: hiveuser
+        • Password: password
+        
+        Install the Spark client configuration on elephant
+        add the Spark Gateway role on elephant so that you can run the Spark shell from elephant
+        Add the Gateway role to elephant and click Continue
+        Verify that you can run a Hive command from the Beeline shell.
+        On elephant:
+        beeline -u jdbc:hive2://elephant:10000/default -n training
+        > SHOW TABLES;
+        > !quit
+        
+        
+    add impala
+        • Impala Catalog Server: horse
+        • Impala StateStore: horse
+        • Impala Daemon: elephant, horse, monkey, and tiger
+
+    
+10.Running Hive Queries
+    On elephant
+        hdfs dfs -cat movierating/part-m-00000 | head
+        beeline -u jdbc:hive2://elephant:10000 -n training
+        Define the movierating table in Hive
+            CREATE EXTERNAL TABLE movierating
+            (userid INT, movieid STRING, rating TINYINT)
+            ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
+            LOCATION '/user/training/movierating';
+        Verify that you created the movierating table in the Hive metastore
+            On elephant:
+            > SHOW TABLES;
+            
+        Run a simple Hive test query that counts the number of rows in the movieratings table.
+            > SELECT COUNT(*) FROM movierating;
+            +----------+--+
+            |   _c0    |
+            +----------+--+
+            | 1000205  |
+            +----------+--+
+            
+            
+11.Running Hive on Spark
+    on elephant:
+        Set Spark as the execution engine
+        set hive.execution.engine;
+            +---------------------------+--+
+            |            set            |
+            +---------------------------+--+
+            | hive.execution.engine=mr  |
+            +---------------------------+--+
+            1 row selected (46.592 seconds)
+            
+        set hive.execution.engine=spark;
+            0: jdbc:hive2://elephant:10000> set hive.execution.engine;
+            +------------------------------+--+
+            |             set              |
+            +------------------------------+--+
+            | hive.execution.engine=spark  |
+            +------------------------------+--+
+        
+        SELECT COUNT(*) FROM movierating;
+            +----------+--+
+            |   _c0    |
+            +----------+--+
+            | 1000205  |
+            +----------+--+
+            1 row selected (42.626 seconds)
+        > !quit
+
+12.Running Impala Queries
+    On elephant
+        Start the Impala shell
+            impala-shell
+            
+        Connect to the Impala Catalog Server running on horse
+            CONNECT horse;
+            
+        --清空impala缓存否则报错   
+        
+            INVALIDATE METADATA; 
+            
+        run the same query
+        
+            SELECT COUNT(*) FROM movierating;
+            +----------+
+            | count(*) |
+            +----------+
+            | 1000205  |
+            +----------+
+            Fetched 1 row(s) in 6.68s
+            
+            > quit;
+            
+
+13.Using Hue to Control Hadoop User Access
+
+    Adding an HttpFS Role Instance to the hdfs Service on monkey.
+    
+        verify HttpFS operation
+            On elephant:
+                $ ssh training@monkey netstat -tan | grep :14000
+                $ curl -s "http://monkey:14000/webhdfs/v1/user/training?op=LISTSTATUS&user.name=training" | python -m json.tool
+    Adding the Oozie Service on monkey
+        hdfs, yarn, and zookeeper services
+        
+        Oozie Server: monkey
+    Database Setup
+        • Database Host Name: lion
+        • Database Type: MySQL
+        • Database Name: oozie
+        • Username: oozieuser
+        • Password: password
+        
+    Adding the Hue Service on monkey
+        containing the hdfs, hive, impala, oozie, yarn, and zookeeper services
+        Specify host • Hue Server: monkey
+        Database Setup
+            • Database Host Name: lion
+            • Database Type: MySQL
+            • Database Name: hue
+            • Username: hueuser
+            • Password: password
+    Submit a Hadoop WordCount job browse in Hue
+        hadoop jar /opt/cloudera/parcels/CDH/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar wordcount /tmp/shakespeare.txt test_output
+        
+    Exploring the Hue User Interface
+        http://monkey:8888
+        admin
+        training
+
+14.Configuring HDFS High Availability 
+
+    on elephant tiger horse 
+        sudo mkdir /dfs/jn
+        sudo chown hdfs:hadoop /dfs/jn
+        ls -l /dfs/jn
+15.Using the Fair Scheduler
+    yarn.nodemanager.resource.memory-mb Change the value of this parameter to 3GB
+    
+    
+    On elephant:
+    $ cd ~/training_materials/admin/scripts
+    $ cat pools.sh
+    ./pools.sh pool1 start
+    ./pools.sh pool2 start
+    ./pools.sh pool3 start

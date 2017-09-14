@@ -1,0 +1,10 @@
+Cloudera Note
+
+1. HDFS read caching
+
+dfs.datanode.max.locked.memory 
+default 4G 
+set 0 to disable caching 
+
+
+
