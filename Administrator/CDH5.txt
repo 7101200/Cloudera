@@ -1,0 +1,68 @@
+Cloudera Note
+
+1. HDFS read caching
+
+dfs.datanode.max.locked.memory 
+default 4G 
+set 0 to disable caching 
+
+
+Hadoop作业JVM堆大小设置优化
+
+Container is running beyond memory limitshttp://stackoverflow.com/questions/21005643/container-is-running-beyond-memory-limits`　　
+
+[hadoop] - Container [xxxx] is running beyond physical/virtual memory limits. http://www.cnblogs.com/liuming1992/p/5040262.html
+
+当运行mapreduce的时候，有时候会出现异常信息，提示物理内存或者虚拟内存超出限制，默认情况下：虚拟内存是物理内存的2.1倍。异常信息类似如下：
+
+Container [pid=13026,containerID=container_1449820132317_0013_01_000012] is running beyond physical memory limits. Current usage: 1.0 GB of 1 GB physical memory used; 1.7 GB of 2.1 GB virtual memory used. Killing container. Dump of the process-tree for container_1449820132317_0013_01_000012 : |- PID PPID PGRPID SESSID CMD_NAME USER_MODE_TIME(MILLIS) SYSTEM_TIME(MILLIS) VMEM_USAGE(BYTES) RSSMEM_USAGE(PAGES) FULL_CMD_LINE |- 13044 13026 13026 13026 (java) 4479 494 1696595968 271631 /home/hadoop/cdh5.2.4/jdk1.7.0_79/bin/java -Djava.net.preferIPv4Stack=true -xxx
+
+我们可以看到该异常信息是提示物理内存超过限制，但是通过我们查看代码我们发现我们最终使用的内存没有达到1G，只有500M-。（具体原因没有细查）最终我们发现影响这个代码执行的参数分别是：
+参数 	默认值 	描述
+yarn.scheduler.minimum-allocation-mb 	1024 	每个container请求的最低jvm配置，单位m。如果请求的内存小于该值，那么会重新设置为该值。
+yarn.scheduler.maximum-allocation-mb 	8192 	每个container请求的最高jvm配置，单位m。如果大于该值，会被重新设置。
+yarn.nodemanager.resource.memory-mb 	8192 	每个nodemanager节点准备最高内存配置，单位m
+yarn.nodemanager.vmem-pmem-ratio 	2.1 	虚拟内存和物理内存之间的比率，如果提示virtual memory limits的时候，可以将该值调大。
+yarn.nodemanager.pmem-check-enabled 	true 	是否进行物理内存限制比较，设置为false，不会进行大小的比较
+yarn.nodemanager.vmem-check-enabled 	false 	是否进行虚拟内存限制比较。
+mapreduce.map.memory.mb 	1024 	map内存申请大小，单位m
+mapreduce.reduce.memory.mb 	1024 	reduce内存申请大小，单位m
+mapred.child.java.opts 	-Xmx200 	map/reduce执行参数设置，可以参数Hadoop Mapreduce Error: GC overhead limit exceeded
+
+针对该异常信息，有多种方式进行解决：
+
+第一种：
+
+　　直接将yarn.nodemanager.pmem-check-enabled和yarn.nodemanager.vmem-check-enabled设置为false，那么可以杜绝异常信息的产生。
+
+第二种：
+
+　　如果异常信息提示的是virtual memory不够，那么可以将yarn.nodemanager.vmem-pmem-ratio参数改大，那么也可以避免异常信息的产生。
+
+第三种：
+
+　　修改mapreduce参数，设置修改如下：
+
+　　mapreduce.map.memory.mb = (1~2倍) * yarn.scheduler.minimum-allocation-mb
+
+　　mapreduce.reduce.memory.mb = (1~4倍) * yarn.scheduler.minimum-allocation-mb
+
+　　1. mapred.child.java.opts = -XmxTm(T数字要小于map和reduce的设置value)
+
+　　2. mapreduce.map.java.opts=-Xmx(<mapreduce.map.memory.mb)m
+
+　　    mapreduce.reduce.java.opts=-Xmx(<mapreduce.reduce.memory.mb)m
+
+　　总结：最终运行参数给定的jvm堆大小必须小于参数指定的map和reduce的memory大小，最好为70%以下。
+
+hadoop源码涉及到地方：
+
+1. org.apache.hadoop.mapred.MapReduceChildJVM.getChildJavaOpts
+
+2. org.apache.hadoop.yarn.server.nodemanager.containermanager.monitor.ContainersMonitorImpl.MonitoringThread.run()<398-465行>(进行内存限制判断)
+
+3. org.apache.hadoop.yarn.server.nodemanager.containermanager.container.ContainerImpl.LaunchTransition.transition()<647-658行>(进行物理内存和虚拟内存大小限制计算和赋值)
+
+　　物理内存大小其实就是mapreduce.map.memory.mb和mapreduce.reduce.memory.mb的一个大小值
+
+
